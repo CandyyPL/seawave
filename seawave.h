@@ -1,0 +1,199 @@
+#ifndef SW_H_
+#define SW_H_
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#define PI 3.141592
+#define BASE_FREQ 440
+#define MIN_AMP 0
+#define MID_AMP 8000
+#define MAX_AMP 16000
+
+#pragma pack(push, 1)
+typedef struct WavHeader {
+  // riff chunk
+  char riff_id[4];
+  uint32_t riff_size;
+  char wave_id[4];
+
+  // fmt subchunk
+  char fmt[4];
+  uint32_t fmt_size;
+  uint16_t audio_format;
+  uint16_t num_channels;
+  uint32_t sample_rate;
+  uint32_t byte_rate;
+  uint16_t block_align;
+  uint16_t bits_per_sample;
+
+  // data chunk
+  char data_id[4];
+  uint32_t data_size;
+} wav_header_t;
+#pragma pack(pop)
+
+typedef struct WavMetadata {
+  uint16_t num_channels;
+  uint32_t sample_rate;
+  uint16_t bit_depth;
+  uint32_t duration;
+} wav_metadata_t;
+
+typedef struct WavFile {
+  wav_header_t *h;
+  wav_metadata_t *m;
+  int16_t *data;
+} wav_file_t;
+
+wav_metadata_t get_wav_meta(wav_header_t header);
+wav_header_t create_wav_header(uint8_t audio_format, wav_metadata_t wav_meta);
+
+void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, uint16_t frequency);
+void nn_resample(wav_metadata_t wav_meta, int new_sample_rate, int16_t *buffer_src, int16_t *buffer_dst);
+
+void create_wav_file(char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer);
+void write_wav_data(FILE *fptr, wav_metadata_t wav_meta, wav_header_t header, int16_t *data);
+void read_wav_meta(char *filename, wav_metadata_t *wav_meta);
+void read_wav_data(char *filename, int total_samples, int16_t *wav_data);
+
+void get_resampled_filename(char *filename, int new_sample_rate, char *new_filename);
+
+#ifdef SW_IMP_
+
+wav_metadata_t get_wav_meta(wav_header_t header) {
+  int num_samples = header.data_size / header.block_align;
+  int duration = num_samples / header.sample_rate;
+
+  wav_metadata_t wav_meta = {
+    .num_channels = header.num_channels,
+    .sample_rate = header.sample_rate,
+    .bit_depth = header.bits_per_sample,
+    .duration = duration
+  };
+
+  return wav_meta;
+}
+
+wav_header_t create_wav_header(uint8_t audio_format, wav_metadata_t wav_meta) {
+  wav_header_t h;
+
+  memcpy(h.riff_id, "RIFF", 4);
+  memcpy(h.wave_id, "WAVE", 4);
+  memcpy(h.fmt, "fmt ", 4);
+  memcpy(h.data_id, "data", 4);
+
+  h.fmt_size = 16;
+  h.audio_format = audio_format;
+  h.num_channels = wav_meta.num_channels;
+  h.sample_rate = wav_meta.sample_rate;
+  h.block_align = (wav_meta.bit_depth / 8) * wav_meta.num_channels;
+  h.byte_rate = wav_meta.sample_rate * h.block_align;
+  h.bits_per_sample = wav_meta.bit_depth;
+
+  int num_frames = wav_meta.sample_rate * wav_meta.duration;
+
+  h.data_size = num_frames * h.block_align;
+  h.riff_size = h.data_size + 36;
+
+  return h;
+}
+
+void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, uint16_t frequency) {
+  int num_frames = wav_meta.sample_rate * wav_meta.duration;
+
+  for (int i = 0; i < num_frames; i++) {
+    double t = (double)i / wav_meta.sample_rate;
+    double value = sin(2.0 * PI * frequency * t);
+
+    for (int c = 0; c < wav_meta.num_channels; c++) {
+      buffer[i * wav_meta.num_channels + c] = value * MID_AMP;
+    }
+  }
+}
+
+void nn_resample(wav_metadata_t wav_meta, int new_sample_rate, int16_t *buffer_src, int16_t *buffer_dst) {
+  double ratio = (double)wav_meta.sample_rate / new_sample_rate;
+  int num_frames = wav_meta.sample_rate * wav_meta.duration;
+  double new_num_frames = round(num_frames / ratio);
+
+  for (int i = 0; i < new_num_frames; i++) {
+    int source = round(i * ratio);
+
+    if (source < num_frames) {
+      for (int c = 0; c < wav_meta.num_channels; c++) {
+        buffer_dst[i * wav_meta.num_channels + c] = buffer_src[source * wav_meta.num_channels + c];
+      }
+    }
+    else break;
+  }
+}
+
+void create_wav_file(char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer) {
+  FILE *fptr = fopen(filename, "wb");
+
+  if (fptr == NULL) {
+    printf("error: could not open a file\n");
+  }
+
+  write_wav_data(fptr, wav_meta, wav_header, buffer);
+  fclose(fptr);
+}
+
+void write_wav_data(FILE *fptr, wav_metadata_t wav_meta, wav_header_t header, int16_t *data) {
+  fwrite(&header, sizeof(header), 1, fptr);
+
+  int total_samples = wav_meta.duration * wav_meta.sample_rate * wav_meta.num_channels;
+  fwrite(data, sizeof(int16_t), total_samples, fptr);
+}
+
+void read_wav_meta(char *filename, wav_metadata_t *wav_meta) {
+  FILE *fptr = fopen(filename, "rb");
+
+  if (fptr == NULL) {
+    printf("error: could not open file for read\n");
+  }
+
+  wav_header_t wav_header;
+
+  fread(&wav_header, sizeof(wav_header_t), 1, fptr);
+  *wav_meta = get_wav_meta(wav_header);
+
+  fclose(fptr);
+}
+
+void read_wav_data(char *filename, int total_samples, int16_t *wav_data) {
+  FILE *fptr = fopen(filename, "rb");
+
+  if (fptr == NULL) {
+    printf("error: could not open file for read\n");
+  }
+
+  fread(wav_data, sizeof(int16_t), total_samples, fptr);
+  fclose(fptr);
+}
+
+void get_resampled_filename(char *filename, int new_sample_rate, char *new_filename) {
+  char base_name[64];
+  snprintf(base_name, 64, "%s", filename);
+
+  char *ext = strstr(base_name, ".wav");
+  if (ext != NULL) *ext = '\0';
+
+  snprintf(new_filename, 64, "%s_%d.wav", base_name, new_sample_rate);
+}
+
+int get_total_samples(wav_metadata_t wav_meta, int target_sample_rate) {
+  int num_samples = wav_meta.sample_rate * wav_meta.duration;
+
+  double ratio = (double)wav_meta.sample_rate / target_sample_rate;
+  int new_num_frames = round(num_samples / ratio);
+  return new_num_frames * wav_meta.num_channels;
+}
+
+#endif // SW_IMP_
+
+#endif // SW_H_
