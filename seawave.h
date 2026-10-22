@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
+#include <limits.h>
 
 #define PI 3.141592
 #define BASE_FREQ 440
@@ -52,15 +54,21 @@ typedef struct WavFile {
 wav_metadata_t get_wav_meta(wav_header_t header);
 wav_header_t create_wav_header(uint8_t audio_format, wav_metadata_t wav_meta);
 
-void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, uint16_t frequency);
+void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, double frequency);
 void nn_resample(wav_metadata_t wav_meta, int new_sample_rate, int16_t *buffer_src, int16_t *buffer_dst);
 
-void create_wav_file(char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer);
+void create_wav_file(const char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer);
 void write_wav_data(FILE *fptr, wav_metadata_t wav_meta, wav_header_t header, int16_t *data);
-void read_wav_meta(char *filename, wav_metadata_t *wav_meta);
-void read_wav_data(char *filename, int total_samples, int16_t *wav_data);
+void read_wav_meta(const char *filename, wav_metadata_t *wav_meta);
+void read_wav_data(const char *filename, int total_samples, int16_t *wav_data);
 
-void get_resampled_filename(char *filename, int new_sample_rate, char *new_filename);
+void get_resampled_filename(const char *filename, int new_sample_rate, char *new_filename);
+
+int get_total_samples(wav_metadata_t wav_meta, int target_sample_rate);
+
+int parse_int(const char *flag, const char *s);
+
+double freq(char key);
 
 #ifdef SW_IMP_
 
@@ -102,7 +110,7 @@ wav_header_t create_wav_header(uint8_t audio_format, wav_metadata_t wav_meta) {
   return h;
 }
 
-void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, uint16_t frequency) {
+void generate_sine_wave(wav_metadata_t wav_meta, int16_t *buffer, double frequency) {
   int num_frames = wav_meta.sample_rate * wav_meta.duration;
 
   for (int i = 0; i < num_frames; i++) {
@@ -132,7 +140,7 @@ void nn_resample(wav_metadata_t wav_meta, int new_sample_rate, int16_t *buffer_s
   }
 }
 
-void create_wav_file(char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer) {
+void create_wav_file(const char *filename, wav_metadata_t wav_meta, wav_header_t wav_header, int16_t *buffer) {
   FILE *fptr = fopen(filename, "wb");
 
   if (fptr == NULL) {
@@ -150,7 +158,7 @@ void write_wav_data(FILE *fptr, wav_metadata_t wav_meta, wav_header_t header, in
   fwrite(data, sizeof(int16_t), total_samples, fptr);
 }
 
-void read_wav_meta(char *filename, wav_metadata_t *wav_meta) {
+void read_wav_meta(const char *filename, wav_metadata_t *wav_meta) {
   FILE *fptr = fopen(filename, "rb");
 
   if (fptr == NULL) {
@@ -165,7 +173,7 @@ void read_wav_meta(char *filename, wav_metadata_t *wav_meta) {
   fclose(fptr);
 }
 
-void read_wav_data(char *filename, int total_samples, int16_t *wav_data) {
+void read_wav_data(const char *filename, int total_samples, int16_t *wav_data) {
   FILE *fptr = fopen(filename, "rb");
 
   if (fptr == NULL) {
@@ -176,7 +184,7 @@ void read_wav_data(char *filename, int total_samples, int16_t *wav_data) {
   fclose(fptr);
 }
 
-void get_resampled_filename(char *filename, int new_sample_rate, char *new_filename) {
+void get_resampled_filename(const char *filename, int new_sample_rate, char *new_filename) {
   char base_name[64];
   snprintf(base_name, 64, "%s", filename);
 
@@ -192,6 +200,33 @@ int get_total_samples(wav_metadata_t wav_meta, int target_sample_rate) {
   double ratio = (double)wav_meta.sample_rate / target_sample_rate;
   int new_num_frames = round(num_samples / ratio);
   return new_num_frames * wav_meta.num_channels;
+}
+
+int parse_int(const char *flag, const char *s) {
+  char *end;
+  errno = 0;
+
+  long n = strtol(s, &end, 10);
+
+  if (errno || end == s || *end != '\0' || n < 0 || n > INT_MAX) {
+    fprintf(stderr, "%s: invalid number '%s'\n", flag, s);
+    exit(1);
+  }
+
+  return (int)n;
+}
+
+double freq(char key) {
+  switch (key) {
+    case 'C': return 261.63;
+    case 'D': return 293.66;
+    case 'E': return 329.63;
+    case 'F': return 349.23;
+    case 'G': return 392.00;
+    case 'A': return 440.00;
+    case 'H': return 493.88;
+    default: return 0;
+  }
 }
 
 #endif // SW_IMP_

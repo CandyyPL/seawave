@@ -1,7 +1,7 @@
 #define SW_IMP_
 #include "seawave.h"
 
-void generate(int num_channels, int sample_rate, int bit_depth, int duration) {
+void generate(int num_channels, int sample_rate, int bit_depth, int duration, char sound) {
   if (num_channels == 0) num_channels = 1;
   if (sample_rate == 0) sample_rate = 44100;
   if (bit_depth == 0) bit_depth = 16;
@@ -23,15 +23,17 @@ void generate(int num_channels, int sample_rate, int bit_depth, int duration) {
     exit(1);
   }
 
+  double sound_freq = freq(sound);
+
   wav_header_t wav_header = create_wav_header(1, wav_meta);
-  generate_sine_wave(wav_meta, buffer, BASE_FREQ);
+  generate_sine_wave(wav_meta, buffer, sound_freq);
   create_wav_file(output, wav_meta, wav_header, buffer);
   free(buffer);
 
   exit(0);
 }
 
-void resample(char *filename, int new_sample_rate) {
+void resample(const char *filename, int new_sample_rate) {
   wav_metadata_t wav_meta;
 
   read_wav_meta(filename, &wav_meta);
@@ -81,42 +83,33 @@ int main(int argc, char *argv[]) {
   int new_sample_rate = 0;
   int bit_depth = 0;
   int duration = 0;
+  char sound = 'C';
 
-  char *in_file = "test.wav";
+  const char *in_file = "test.wav";
 
-  for (int i = 0; i < argc; i++) {
-    if (strcmp(argv[i], "-m") == 0 && (i + 1) < argc) {
-      if (strcmp(argv[i + 1], "generate") == 0) {
-        mode = 0;
-      }
-      else if (strcmp(argv[i + 1], "resample") == 0) {
-        mode = 1;
-      }
+  for (int i = 1; i < argc; i++) {
+    const char *flag = argv[i];
+
+    if (i + 1 >= argc) {
+      fprintf(stderr, "%s needs a value\n", flag);
+      return 1;
     }
 
-    if (strcmp(argv[i], "-f") == 0 && (i + 1) < argc) {
-      in_file = argv[i + 1];
-    }
+    const char *val = argv[++i];
 
-    if (strcmp(argv[i], "-r") == 0 && (i + 1) < argc) {
-      new_sample_rate = atoi(argv[i + 1]);
+    if (strcmp(flag, "-m") == 0) {
+        if (strcmp(val, "generate") == 0) mode = 0;
+        else if (strcmp(val, "resample") == 0) mode = 1;
+        else { fprintf(stderr, "unknown mode: %s\n", val); return 1; }
     }
-
-    if (strcmp(argv[i], "-c") == 0 && (i + 1) < argc) {
-      num_channels = atoi(argv[i + 1]);
-    }
-
-    if (strcmp(argv[i], "-r") == 0 && (i + 1) < argc) {
-      sample_rate = atoi(argv[i + 1]);
-    }
-
-    if (strcmp(argv[i], "-b") == 0 && (i + 1) < argc) {
-      bit_depth = atoi(argv[i + 1]);
-    }
-
-    if (strcmp(argv[i], "-t") == 0 && (i + 1) < argc) {
-      duration = atoi(argv[i + 1]);
-    }
+    else if (strcmp(flag, "-f") == 0) in_file = val;
+    else if (strcmp(flag, "--rate") == 0) sample_rate = parse_int(flag, val);
+    else if (strcmp(flag, "-n") == 0) new_sample_rate = parse_int(flag, val);
+    else if (strcmp(flag, "-c") == 0) num_channels = parse_int(flag, val);
+    else if (strcmp(flag, "-b") == 0) bit_depth = parse_int(flag, val);
+    else if (strcmp(flag, "-d") == 0) duration = parse_int(flag, val);
+    else if (strcmp(flag, "--sound") == 0) sound = val[0];
+    else { fprintf(stderr, "unknown option: %s\n", flag); return 1; }
   }
 
   if (mode == 0) {
@@ -135,7 +128,7 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
-    generate(num_channels, sample_rate, bit_depth, duration);
+    generate(num_channels, sample_rate, bit_depth, duration, sound);
   }
 
   if (mode == 1) {
