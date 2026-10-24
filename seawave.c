@@ -23,7 +23,7 @@ void generate(int num_channels, int sample_rate, int bit_depth, int duration, ch
     exit(1);
   }
 
-  double sound_freq = freq(sound);
+  double sound_freq = note_freq(&sound);
 
   wav_header_t wav_header = create_wav_header(1, wav_meta);
   generate_sine_wave(wav_meta, buffer, sound_freq);
@@ -70,6 +70,51 @@ void resample(const char *filename, int new_sample_rate) {
   exit(0);
 }
 
+void read_sheet(const char *filename) {
+  FILE *fptr = fopen(filename, "r");
+
+  if (fptr == NULL) {
+    fprintf(stderr, "error: could not open a file\n");
+    exit(1);
+  }
+
+  char line[256];
+  char melody[64][3];
+
+  int bpm = 0;
+  int notes_per_bar = 0;
+  int note_type = 0;
+
+  int ln = 1;
+  int nn = 0;
+
+  while (fgets(line, sizeof(line), fptr)) {
+    if (ln == 1) {
+      sscanf(line, "%d %d/%d", &bpm, &notes_per_bar, &note_type);
+    }
+
+    if (ln > 1) {
+      char *tok = strtok(line, " \r\n");
+
+      while (tok) {
+        snprintf(melody[nn++], sizeof(melody[0]), "%s", tok);
+        tok = strtok(NULL, " \r\n");
+      }
+    }
+
+    ln++;
+  }
+
+  printf("BPM: %d\n", bpm);
+  printf("Scheme: %d/%d\n", notes_per_bar, note_type);
+
+  for (int i = 0; i < nn; i++) {
+    printf("%s -> %.02f\n", melody[i], note_freq(melody[i]));
+  }
+
+  fclose(fptr);
+}
+
 int main(int argc, char *argv[]) {
   if (argc == 1) {
     printf("usage: ./seawave -m <mode> -f <input.wav> <mode_options>\n");
@@ -78,14 +123,15 @@ int main(int argc, char *argv[]) {
 
   int mode = 0;
 
-  int num_channels = 0;
-  int sample_rate = 0;
+  int num_channels = 2;
+  int sample_rate = 48000;
   int new_sample_rate = 0;
-  int bit_depth = 0;
+  int bit_depth = 16;
   int duration = 0;
+  int bpm = 0;
   char sound = 'C';
 
-  const char *in_file = "test.wav";
+  const char *in_file = "";
 
   for (int i = 1; i < argc; i++) {
     const char *flag = argv[i];
@@ -100,6 +146,7 @@ int main(int argc, char *argv[]) {
     if (strcmp(flag, "-m") == 0) {
         if (strcmp(val, "generate") == 0) mode = 0;
         else if (strcmp(val, "resample") == 0) mode = 1;
+        else if (strcmp(val, "melody") == 0) mode = 2;
         else { fprintf(stderr, "unknown mode: %s\n", val); return 1; }
     }
     else if (strcmp(flag, "-f") == 0) in_file = val;
@@ -108,6 +155,7 @@ int main(int argc, char *argv[]) {
     else if (strcmp(flag, "-c") == 0) num_channels = parse_int(flag, val);
     else if (strcmp(flag, "-b") == 0) bit_depth = parse_int(flag, val);
     else if (strcmp(flag, "-d") == 0) duration = parse_int(flag, val);
+    else if (strcmp(flag, "-b") == 0) bpm = parse_int(flag, val);
     else if (strcmp(flag, "--sound") == 0) sound = val[0];
     else { fprintf(stderr, "unknown option: %s\n", flag); return 1; }
   }
@@ -132,11 +180,25 @@ int main(int argc, char *argv[]) {
   }
 
   if (mode == 1) {
+    if (strcmp(in_file, "") == 0) {
+      fprintf(stderr, "error: wav file is required for resampling\n");
+      exit(1);
+    }
+
     if (new_sample_rate == 0) {
       printf("error: new sample rate is invalid\n");
       exit(1);
     }
 
     resample(in_file, new_sample_rate);
+  }
+
+  if (mode == 2) {
+    if (strcmp(in_file, "") == 0) {
+      fprintf(stderr, "error: sheet is required for melody mode\n");
+      exit(1);
+    }
+
+    read_sheet(in_file);
   }
 }

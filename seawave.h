@@ -51,6 +51,26 @@ typedef struct WavFile {
   int16_t *data;
 } wav_file_t;
 
+typedef struct Note {
+  const char *name;
+  double freq;
+} note_t;
+
+note_t notes[] = {
+  {"C4", 261.63},
+  {"d4", 277.18},
+  {"D4", 293.66},
+  {"e4", 311.13},
+  {"E4", 329.63},
+  {"F4", 349.23},
+  {"g4", 369.99},
+  {"G4", 392.00},
+  {"a4", 415.30},
+  {"A4", 440.00},
+  {"b4", 466.16},
+  {"B4", 493.88}
+};
+
 wav_metadata_t get_wav_meta(wav_header_t header);
 wav_header_t create_wav_header(uint8_t audio_format, wav_metadata_t wav_meta);
 
@@ -68,7 +88,7 @@ int get_total_samples(wav_metadata_t wav_meta, int target_sample_rate);
 
 int parse_int(const char *flag, const char *s);
 
-double freq(char key);
+double note_freq(const char *key);
 
 #ifdef SW_IMP_
 
@@ -144,7 +164,7 @@ void create_wav_file(const char *filename, wav_metadata_t wav_meta, wav_header_t
   FILE *fptr = fopen(filename, "wb");
 
   if (fptr == NULL) {
-    printf("error: could not open a file\n");
+    fprintf(stderr, "error: could not open a file\n");
   }
 
   write_wav_data(fptr, wav_meta, wav_header, buffer);
@@ -162,7 +182,7 @@ void read_wav_meta(const char *filename, wav_metadata_t *wav_meta) {
   FILE *fptr = fopen(filename, "rb");
 
   if (fptr == NULL) {
-    printf("error: could not open file for read\n");
+    fprintf(stderr, "error: could not open file for read\n");
   }
 
   wav_header_t wav_header;
@@ -216,17 +236,12 @@ int parse_int(const char *flag, const char *s) {
   return (int)n;
 }
 
-double freq(char key) {
-  switch (key) {
-    case 'C': return 261.63;
-    case 'D': return 293.66;
-    case 'E': return 329.63;
-    case 'F': return 349.23;
-    case 'G': return 392.00;
-    case 'A': return 440.00;
-    case 'H': return 493.88;
-    default: return 0;
+double note_freq(const char *key) {
+  for (size_t i = 0; i < sizeof(notes) / sizeof(*notes); i++) {
+    if (strcmp(notes[i].name, key) == 0) return notes[i].freq;
   }
+
+  return 0.0;
 }
 
 #endif // SW_IMP_
